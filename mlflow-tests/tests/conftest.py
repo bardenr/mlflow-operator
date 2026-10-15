@@ -176,6 +176,17 @@ def setup_clients():
     workspaces = _get_configured_workspaces()
     logger.info(f"Configured workspaces: {workspaces}")
 
+    if Config.LOCAL:
+        if not Config.ADMIN_USERNAME or not Config.ADMIN_PASSWORD:
+            raise pytest.UsageError("LOCAL=true requires admin_uname and admin_pass.")
+        admin_client = ClientManager.create_mlflow_client(
+            username=Config.ADMIN_USERNAME,
+            password=Config.ADMIN_PASSWORD,
+            tracking_uri=Config.MLFLOW_URI,
+        )
+        # Bookkeeping label for cleanup only; local tests do not select a server workspace.
+        return admin_client, None, None, ["default"]
+
     logger.info("Setting up Kubernetes environment")
     core_v1_api, rbac_v1_api = ClientManager.create_k8s_client()
     logger.debug("Created Kubernetes API clients")
@@ -287,6 +298,9 @@ def create_experiments_and_runs(setup_clients):
     logger.info("=" * 80)
 
     admin_client, k8_manager, user_manager, workspaces = setup_clients
+
+    if Config.LOCAL:
+        return {}
 
     if is_upgrade_phase():
         logger.info("Skipping baseline resource creation for upgrade-only pytest phase")

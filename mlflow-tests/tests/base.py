@@ -51,6 +51,11 @@ def set_user_context(user_info: tuple[str, str]) -> MlflowClient:
     username = user_info[0]
     credential = user_info[1]
 
+    if Config.LOCAL:
+        return ClientManager.create_mlflow_client(
+            username=username, password=credential, tracking_uri=Config.MLFLOW_URI
+        )
+
     logger.info("=" * 80)
     logger.info("SETTING USER AUTHENTICATION CONTEXT")
     logger.info("=" * 80)
@@ -144,7 +149,7 @@ class TestBase:
         )
 
     @pytest.fixture(autouse=True)
-    def admin_user_context(self):
+    def admin_user_context(self, init_clients):
         """Set admin user authentication context and create authenticated admin client.
 
         This fixture runs before each test to ensure the admin client has proper
@@ -155,6 +160,16 @@ class TestBase:
             This is necessary because MLflow clients cache credentials at creation time.
         """
         logger.debug("Setting up admin user authentication context")
+
+        if Config.LOCAL:
+            self.admin_client = set_user_context((Config.ADMIN_USERNAME, Config.ADMIN_PASSWORD))
+            self.test_context.active_user = UserInfo(
+                uname=Config.ADMIN_USERNAME, client=self.admin_client
+            )
+            self.test_context.user_client = self.admin_client
+            self.test_context.active_workspace = self.workspaces[0]
+            mlflow.set_workspace(None)
+            return
 
         # Use Bearer token authentication
         logger.debug("Configuring admin authentication for K8s mode with Bearer token")
@@ -382,7 +397,7 @@ class TestBase:
         # Restore original workspace if it was set
         if original_workspace:
             try:
-                mlflow.set_workspace(original_workspace)
+                mlflow.set_workspace(None if Config.LOCAL else original_workspace)
                 logger.debug(f"Restored original workspace: {original_workspace}")
             except Exception as e:
                 logger.warning(f"Failed to restore original workspace {original_workspace}: {e}")
@@ -418,7 +433,7 @@ class TestBase:
                 return False
 
             # Attempt workspace switch
-            mlflow.set_workspace(workspace)
+            mlflow.set_workspace(None if Config.LOCAL else workspace)
             logger.debug(f"Switched to workspace: {workspace}")
             return True
 
@@ -568,7 +583,7 @@ class TestBase:
 
             if step.workspace_to_use:
                 self.test_context.active_workspace = step.workspace_to_use
-                mlflow.set_workspace(step.workspace_to_use)
+                mlflow.set_workspace(None if Config.LOCAL else step.workspace_to_use)
 
             # Execute action if present (don't stop on failure - validation will check if it was expected)
             if step.action_func:
